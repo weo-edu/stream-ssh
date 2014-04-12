@@ -21,7 +21,7 @@ module.exports = function(config) {
   commandStream.pipe(es.through(function(cmd) {
     var self = this;
     this.pause();
-    console.log('command', cmd);
+    console.log(cmd);
     conn.exec(cmd, function(err, stream) {
       stream.on('data', function(data) {
         outStream.emit('data', data)
@@ -37,7 +37,6 @@ module.exports = function(config) {
 
   conn.connect(config);
   conn.on('ready', function() {
-    console.log('ready')
     ready = true;
     commandStream.resume();
   });
