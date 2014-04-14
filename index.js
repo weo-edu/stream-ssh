@@ -1,59 +1,45 @@
 var ssh2 = require('ssh2');
-var consoleStream = require('console-stream');
-var fs = require('fs');
-var path = require('path');
-var through = require('through');
-var es = require('event-stream');
-
+var corkable = require('corkable');
+var Transform = require('readable-stream').Transform;
 
 module.exports = function(config) {
   var conn = new ssh2();
-  var ready = false;
-  var commandStream = es.through();
-  commandStream.pause();
+  var stream = new Transform();
 
-  var outStream = es.through(function(data) {
-    commandStream.queue(data);
-  }, function(){
-    commandStream.queue(null);
-  });
+  // Disable the default uncork-on-end behavior of streams
+  corkable(stream);
 
-  commandStream.pipe(es.through(function(cmd) {
+  stream._transform = function(cmd, enc, cb) {
     var self = this;
-    this.pause();
-    console.log(cmd);
-    conn.exec(cmd, function(err, stream) {
-      stream.on('data', function(data) {
-        outStream.emit('data', data)
+    // Buffer until each command completes
+    self.cork();
+    conn.exec(cmd, function(err, res) {
+      // Pass along errors
+      if(err) return cb(err);
+
+      res.on('data', function(data) {
+        // Queue output
+        self.push(data);
+      }).on('end', function() {
+        // Accept new commands
+        self.uncork();
+        cb();
       });
-      stream.on('end', function() {
-        self.resume();
-      }); 
     });
-  }, function(){
-    outStream.emit('end');
+  };
+
+  // Close the connection after all our commands are complete
+  stream._flush = function() {
     conn.end();
-  }))
+  };
 
   conn.connect(config);
   conn.on('ready', function() {
-    ready = true;
-    commandStream.resume();
+    // Begin executing commands
+    stream.uncork();
   });
 
-  return outStream;
+  // Buffer until the connection is ready
+  stream.cork();
+  return stream;
 }
-
-
-
-/* Example:
-fs.createReadStream('./test.sh')
-  .pipe(es.split())
-  .pipe(module.exports({
-  host: '107.170.198.91',
-  username: 'task',
-  privateKey: fs.readFileSync(path.resolve(process.env.HOME, '.ssh/id_rsa'))
-}))
-  .pipe(consoleStream());
-
-*/
