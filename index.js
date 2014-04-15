@@ -1,7 +1,11 @@
 var ssh2 = require('ssh2');
 var corkable = require('corkable');
 var Transform = require('readable-stream').Transform;
+var fs = require('fs');
+var path = require('path');
 
+// Config is optional, if they are not passed, you must
+// call .connect() on the stream later
 module.exports = function(config) {
   var conn = new ssh2();
   var stream = new Transform();
@@ -29,17 +33,34 @@ module.exports = function(config) {
   };
 
   // Close the connection after all our commands are complete
-  stream._flush = function() {
+  stream._flush = function(cb) {
     conn.end();
+    cb();
   };
 
-  conn.connect(config);
-  conn.on('ready', function() {
-    // Begin executing commands
-    stream.uncork();
-  });
+  stream.connect = function(config) {
+    // If no private key is supplied, default to the current
+    // user's key
+    if(! config.privateKey) {
+      config.privateKey = fs.readFileSync(path.join(process.env.HOME, '.ssh/id_rsa'));
+    }
+
+    conn.connect(config);
+    conn.on('ready', function() {
+      // Begin executing commands
+      stream.uncork();
+    });
+
+    return stream;
+  };
+
+  // If config was passed, connect immediately,
+  // otherwise buffer until connect() is called
+  if(config)
+    stream.connect(config);
 
   // Buffer until the connection is ready
   stream.cork();
   return stream;
-}
+};
+
