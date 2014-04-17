@@ -13,29 +13,28 @@ module.exports = function(config) {
   // Disable the default uncork-on-end behavior of streams
   corkable(stream);
 
+  var buffer = '';
   stream._transform = function(cmd, enc, cb) {
+    buffer += cmd.toString();
     var self = this;
-    // Buffer until each command completes
-    self.cork();
-    conn.exec(cmd, function(err, res) {
-      // Pass along errors
-      if(err) return cb(err);
-
-      res.on('data', function(data) {
-        // Queue output
-        self.push(data);
-      }).on('end', function() {
-        // Accept new commands
-        self.uncork();
-        cb();
-      });
-    });
+    // Make sure we've got text
+    cmd = cmd.toString();
+    cb();
   };
 
   // Close the connection after all our commands are complete
   stream._flush = function(cb) {
-    conn.end();
-    cb();
+    var self = this;
+    conn.exec(buffer, function(err, res) {
+      if(err) throw err;
+      res.on('data', function(data) {
+        stream.push(data);
+      })
+      .on('exit', function(code, signal) {
+        cb(code);
+        conn.end();
+      });
+    });
   };
 
   stream.connect = function(config) {
