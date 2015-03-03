@@ -53,6 +53,10 @@ module.exports = function(config) {
     return stream;
   };
 
+  stream.disconnect = function() {
+    conn.end();
+  };
+
   // If config was passed, connect immediately,
   // otherwise buffer until connect() is called
   if(config)
